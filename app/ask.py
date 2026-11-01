@@ -42,8 +42,8 @@ def ask(question: str, model: str = MODEL) -> str:
 
 
 # 履歴の圧縮設定（件数は質問と回答を別々に数える。2件で1往復）
-MAX_HISTORY = 12  # これを超えたら古い履歴を要約する
-KEEP_RECENT = 4  # 要約せずそのまま残す直近の件数（偶数にして user 始まりを保つ）
+MAX_HISTORY = 4  # これを超えたら古い履歴を要約する
+KEEP_RECENT = 2  # 要約せずそのまま残す直近の件数（偶数にして user 始まりを保つ）
 
 
 def _compress_history(client: genai.Client, history: list[types.Content]) -> list[types.Content]:
