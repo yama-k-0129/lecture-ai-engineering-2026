@@ -14,7 +14,7 @@ import argparse
 from time import perf_counter
 
 from google import genai
-from google.genai import errors
+from google.genai import errors, types
 
 from app.config import MODEL, api_error_message, get_api_key
 
@@ -41,6 +41,30 @@ def ask(question: str, model: str = MODEL) -> str:
     return response.text
 
 
+# 履歴の圧縮設定（件数は質問と回答を別々に数える。2件で1往復）
+MAX_HISTORY = 12  # これを超えたら古い履歴を要約する
+KEEP_RECENT = 4  # 要約せずそのまま残す直近の件数（偶数にして user 始まりを保つ）
+
+
+def _compress_history(client: genai.Client, history: list[types.Content]) -> list[types.Content]:
+    """古い履歴をLLMで要約し、[要約, 直近の履歴] の形に置き換える。"""
+    old, recent = history[:-KEEP_RECENT], history[-KEEP_RECENT:]
+    transcript = "\n".join(
+        f"{'ユーザー' if c.role == 'user' else 'AI'}: {''.join(p.text or '' for p in c.parts)}"
+        for c in old
+    )
+    summary = client.models.generate_content(
+        model=MODEL,
+        contents="次の会話を、後の会話に必要な事実や決定事項を残して日本語で簡潔に要約してください。\n\n"
+        + transcript,
+    ).text
+    return [
+        types.Content(role="user", parts=[types.Part(text=f"[これまでの会話の要約]\n{summary}")]),
+        types.Content(role="model", parts=[types.Part(text="要約を把握しました。続けてください。")]),
+        *recent,
+    ]
+
+
 def chat() -> None:
     client = genai.Client(api_key=get_api_key())
     conversation = client.chats.create(model=MODEL)
@@ -61,6 +85,11 @@ def chat() -> None:
         response = conversation.send_message(question)
         _print_metrics(MODEL, perf_counter() - started_at, response.usage_metadata)
         print(response.text)
+
+        history = conversation.get_history()
+        if len(history) > MAX_HISTORY:
+            conversation = client.chats.create(model=MODEL, history=_compress_history(client, history))
+            print("[履歴を要約して圧縮しました]")
 
 
 def compare(models: list[str], questions: list[str]) -> None:
