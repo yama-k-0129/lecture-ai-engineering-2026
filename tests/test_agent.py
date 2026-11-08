@@ -40,3 +40,39 @@ def test_glossary_result_reaches_the_model():
         result = agent.run_sync("RAGとは？")
     returns = _parts(result, ToolReturnPart)
     assert returns and returns[0].tool_name == "search_glossary"
+
+
+def test_save_learning_log_waits_for_approval_and_runs_after_yes(tmp_path, monkeypatch):
+    from pydantic_ai import DeferredToolResults
+
+    from app import tools
+    from app.agent import run_with_approval
+
+    monkeypatch.setattr(tools, "LEARNING_LOG_DIR", tmp_path)
+    asked = []
+
+    def say_yes(requests):
+        asked.extend(c.tool_name for c in requests.approvals)
+        return DeferredToolResults(approvals={c.tool_call_id: True for c in requests.approvals})
+
+    with agent.override(model=TestModel(call_tools=["save_learning_log"])):
+        result = run_with_approval(agent, "今日の学習を記録して", model=None, ask=say_yes)
+    assert asked == ["save_learning_log"]
+    assert len(list(tmp_path.glob("*.md"))) == 1
+    assert not isinstance(result.output, DeferredToolRequests)
+
+
+def test_save_learning_log_is_not_run_when_denied(tmp_path, monkeypatch):
+    from pydantic_ai import DeferredToolResults, ToolDenied
+
+    from app import tools
+    from app.agent import run_with_approval
+
+    monkeypatch.setattr(tools, "LEARNING_LOG_DIR", tmp_path)
+
+    def say_no(requests):
+        return DeferredToolResults(approvals={c.tool_call_id: ToolDenied("no") for c in requests.approvals})
+
+    with agent.override(model=TestModel(call_tools=["save_learning_log"])):
+        run_with_approval(agent, "記録して", model=None, ask=say_no)
+    assert list(tmp_path.glob("*.md")) == []

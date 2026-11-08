@@ -46,3 +46,24 @@ def test_default_question_of_lecture1_is_answerable_from_glossary():
     assert "3レベル" in DEFAULT_QUESTION
     hits = json.loads(tools.search_glossary("3レベル"))
     assert hits[0]["term"] == "宿題の3レベル"
+
+
+def test_make_quiz_returns_question_and_answer_of_the_lecture():
+    quiz = json.loads(tools.make_quiz(2))
+    assert quiz["question"].endswith("の意味は？")
+    lecture2 = {t["term"]: t["definition"] for t in tools.load_glossary() if t["lecture"] == 2}
+    term = quiz["question"].removeprefix("「").removesuffix("」の意味は？")
+    assert lecture2[term] == quiz["answer"]
+
+
+def test_make_quiz_reports_lecture_without_terms():
+    assert "用語集にありません" in tools.make_quiz(0)
+
+
+def test_save_learning_log_writes_file_and_rejects_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr(tools, "LEARNING_LOG_DIR", tmp_path / "learning_log")
+    message = tools.save_learning_log("../../evil", "LoRAを学んだ")
+    files = list((tmp_path / "learning_log").glob("*.md"))
+    assert len(files) == 1 and "保存しました" in message  # title に ../ があっても外には書かない
+    assert "LoRAを学んだ" in files[0].read_text(encoding="utf-8")
+    assert "保存しませんでした" in tools.save_learning_log("", "x")
